@@ -1,0 +1,22 @@
+{
+  "name": "PALMSTAKE RTK ENTERPRISE",
+  "short_name": "PalmStake RTK",
+  "description": "Sistem pancang tanam kelapa sawit berbasis GNSS RTK: desain grid segitiga, stake-out offline, QC, GIS, RAB, dan laporan.",
+  "lang": "id",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f2e24",
+  "theme_color": "#0f3d2e",
+  "categories": ["productivity", "business", "utilities"],
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Stake-out Lapangan", "url": "./index.html#field" },
+    { "name": "Peta GIS", "url": "./index.html#map" },
+    { "name": "Quality Control", "url": "./index.html#qc" }
+  ]
+}
