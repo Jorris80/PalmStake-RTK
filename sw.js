@@ -1,7 +1,7 @@
 /* PALMSTAKE RTK ENTERPRISE — Service Worker (offline-first PWA)
  * Shell & pustaka: stale-while-revalidate · Navigasi: network-first → cache
  * Ubin peta berlisensi organisasi (?psoffline=1): cache-first, dibatasi · ubin publik OSM/Esri/OpenTopo: tidak disimpan massal · API Apps Script: selalu jaringan (antrean offline ada di IndexedDB) */
-const VERSION = 'psrtk-1.0.0';
+const VERSION = 'psrtk-1.0.1';
 const TILES = 'psrtk-tiles';
 const TILE_MAX = 6000;
 const SHELL = ['./', './index.html', './manifest.json', './icon.svg'];

@@ -754,6 +754,23 @@ var PSGeo = (function () {
 
 </script>
 <script>
+/* ---- penyimpanan aman: origin GitHub Pages (jorris80.github.io) dipakai bersama banyak aplikasi,
+   kuota localStorage ±5 MB bisa penuh oleh aplikasi lain. Semua tulis dibungkus, ada fallback memori + IndexedDB. */
+(function () {
+  function mk(area) {
+    var mem = {}, store = null; try { store = window[area]; store.setItem('__ps_t', '1'); store.removeItem('__ps_t'); } catch (e) { store = null; }
+    function evict() { // hapus milik PalmStake yang besar/kurang penting dulu
+      try { ['ps_pub', 'ps_legend', 'ps_lastobs'].forEach(function (k) { store.removeItem(k); }); for (var i = store.length - 1; i >= 0; i--) { var k = store.key(i); if (k && k.indexOf('ps_ck_') === 0) store.removeItem(k); } } catch (e) { }
+    }
+    return {
+      get: function (k) { if (mem.hasOwnProperty(k)) return mem[k]; try { return store ? store.getItem(k) : null; } catch (e) { return null; } },
+      set: function (k, v) { v = String(v); if (!store) { mem[k] = v; return false; } try { store.setItem(k, v); delete mem[k]; return true; } catch (e) { evict(); try { store.setItem(k, v); delete mem[k]; return true; } catch (e2) { mem[k] = v; return false; } } },
+      del: function (k) { delete mem[k]; try { if (store) store.removeItem(k); } catch (e) { } },
+      ok: !!store
+    };
+  }
+  window.PS_LS = mk('localStorage'); window.PS_SS = mk('sessionStorage');
+})();
 /* =====================================================================
  * PALMSTAKE — JsCore: state, API, IndexedDB offline, sync, router, tema
  * ===================================================================== */
@@ -777,7 +794,7 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
   PS.dl = function (name, content, mime) { var b = content instanceof Blob ? content : new Blob([content], { type: mime || 'text/plain;charset=utf-8' }); var a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500); };
 
   /* ------------------------------- API ------------------------------- */
-  function gasUrl() { return window.PS_GAS_URL || localStorage.getItem('ps_gas_url') || ''; }
+  function gasUrl() { return window.PS_GAS_URL || PS_LS.get('ps_gas_url') || ''; }
   PS.hasGas = function () { return !!(window.google && google.script && google.script.run); };
   PS.call = function (action, payload) {
     return new Promise(function (res, rej) {
@@ -921,7 +938,7 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
   /* ------------------------------ theme ------------------------------ */
   PS.THEMES = { emerald: '#0f6e4f', ocean: '#0e5a8a', terracotta: '#b5532c', slate: '#334155', royal: '#5b3fb8', sawit: '#7a6a12' };
   PS.theme = {
-    get: function () { var s = (st.boot && st.boot.settings) || {}; var l = {}; try { l = JSON.parse(localStorage.getItem('ps_theme') || '{}'); } catch (e) { } return { theme: l.theme || s.theme || 'emerald', mode: l.mode || 'auto', accent: l.accent || s.accent || '' }; },
+    get: function () { var s = (st.boot && st.boot.settings) || {}; var l = {}; try { l = JSON.parse(PS_LS.get('ps_theme') || '{}'); } catch (e) { } return { theme: l.theme || s.theme || 'emerald', mode: l.mode || 'auto', accent: l.accent || s.accent || '' }; },
     apply: function (t) {
       t = t || PS.theme.get(); var de = document.documentElement;
       de.setAttribute('data-theme', t.theme === 'emerald' ? '' : t.theme);
@@ -929,7 +946,7 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
       de.setAttribute('data-mode', dark ? 'dark' : 'light');
       if (t.accent) { de.style.setProperty('--pri', t.accent); de.style.setProperty('--pri-d', t.accent); } else { de.style.removeProperty('--pri'); de.style.removeProperty('--pri-d'); }
     },
-    set: function (patch) { var t = PS.theme.get(); for (var k in patch) t[k] = patch[k]; localStorage.setItem('ps_theme', JSON.stringify(t)); PS.theme.apply(t); }
+    set: function (patch) { var t = PS.theme.get(); for (var k in patch) t[k] = patch[k]; PS_LS.set('ps_theme', JSON.stringify(t)); PS.theme.apply(t); }
   };
   PS.theme.apply();
   if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener && matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { PS.theme.apply(); });
@@ -981,12 +998,12 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
   PS.applyBoot = function (boot) {
     st.boot = boot; st.T = boot.tables || {}; st.me = boot.me || st.me;
     var projs = PS.T('Projects');
-    var saved = localStorage.getItem('ps_pid');
+    var saved = PS_LS.get('ps_pid');
     st.pid = projs.some(function (p) { return p.id === saved; }) ? saved : (projs[0] ? projs[0].id : '');
     PS.theme.apply(); PS.ui.brand(); PS.ui.nav(); PS.ui.projSel(); PS.ui.licBanner(); PS.ui.avatar();
   };
-  PS.setProject = function (id) { st.pid = id; localStorage.setItem('ps_pid', id); PS.ui.projSel(); PS.rerender(); };
-  PS.sessionExpired = function () { if (!st.token) return; st.token = ''; localStorage.removeItem('ps_token'); sessionStorage.removeItem('ps_token'); PS.ui.toast('Sesi berakhir, silakan login kembali', 'warn'); PS.ui.showLogin(); };
+  PS.setProject = function (id) { st.pid = id; PS_LS.set('ps_pid', id); PS.ui.projSel(); PS.rerender(); };
+  PS.sessionExpired = function () { if (!st.token) return; st.token = ''; PS_LS.del('ps_token'); PS_SS.del('ps_token'); PS.idb.del('token').catch(function () { }); PS.ui.toast('Sesi berakhir, silakan login kembali', 'warn'); PS.ui.showLogin(); };
   /* ------------------------- service worker -------------------------- */
   if (window.PS_MODE !== 'gas' && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener('load', function () {
@@ -999,7 +1016,7 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
   PS.applyUpdate = function () { if (PS.swWaiting) PS.swWaiting.postMessage('SKIP_WAITING'); else location.reload(); };
   PS.logout = function () {
     var pend = PS.sync.pending.filter(function (x) { return x.status !== 'REJECTED'; }).length;
-    var go = function () { if (st.token && st.online) PS.call('logout', {}).catch(function () { }); st.token = ''; localStorage.removeItem('ps_token'); sessionStorage.removeItem('ps_token'); PS.ui.showLogin(); };
+    var go = function () { if (st.token && st.online) PS.call('logout', {}).catch(function () { }); st.token = ''; PS_LS.del('ps_token'); PS_SS.del('ps_token'); PS.idb.del('token').catch(function () { }); PS.ui.showLogin(); };
     if (pend) PS.ui.confirm('Masih ada ' + pend + ' data belum tersinkron. Data tetap aman di perangkat ini dan akan dikirim saat Anda login kembali. Lanjut logout?').then(function (y) { if (y) go(); }); else go();
   };
 })();
@@ -1174,14 +1191,14 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
   ui.bar = function (v, max, color) { var p = max ? Math.min(100, v / max * 100) : 0; return '<div class="bar" title="' + PS.fmtN(p, 1) + '%"><i style="width:' + p + '%;' + (color ? 'background:' + color : '') + '"></i></div>'; };
 
   /* ---------------------- branding, nav, header ---------------------- */
-  function pub() { try { return JSON.parse(localStorage.getItem('ps_pub') || '{}'); } catch (e) { return {}; } }
+  function pub() { try { return JSON.parse(PS_LS.get('ps_pub') || '{}'); } catch (e) { return {}; } }
   ui.brand = function (info) {
     var s = info || (st.boot && st.boot.settings) || pub();
     var title = s.appTitle || s.title || 'PALMSTAKE RTK ENTERPRISE', sub = s.appSubtitle || s.subtitle || 'Precision Planting & GNSS RTK', logo = s.logo || '';
     document.title = title; PS.$('#appTitle').textContent = title; PS.$('#appSub').textContent = sub; PS.$('#loginTitle').textContent = title; PS.$('#loginSub').textContent = sub;
     [['#sbLogo', '#sbLogoFb'], ['#loginLogo', '#loginLogoFb']].forEach(function (p) { var i = PS.$(p[0]), f = PS.$(p[1]); if (logo) { i.src = logo; i.hidden = false; f.classList.add('hidden'); } else { i.hidden = true; f.classList.remove('hidden'); } });
     var ver = 'v' + PS.VERSION; PS.$('#sbVer').textContent = ver + ' · build ' + PS.BUILD; PS.$('#loginVer').textContent = ver;
-    try { localStorage.setItem('ps_pub', JSON.stringify({ title: title, subtitle: sub, logo: logo.length < 400000 ? logo : '', theme: s.theme, accent: s.accent })); } catch (e) { }
+    PS_LS.set('ps_pub', JSON.stringify({ title: title, subtitle: sub, theme: s.theme, accent: s.accent })); if (logo) PS.idb.set('logo', logo).catch(function () { }); else if (info || st.boot) PS.idb.del('logo').catch(function () { });
   };
   var MENU = [
     ['', [['dashboard', '📊', 'Dashboard']]],
@@ -1237,18 +1254,18 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
     PS.$('#splash').classList.add('hidden'); PS.$('#app').classList.add('hidden'); PS.$('#login').classList.remove('hidden'); ui.brand(pub());
     var needUrl = !PS.hasGas() && !window.PS_GAS_URL;
     var f = PS.$('#loginForm');
-    if (needUrl && !f.querySelector('[name=gasurl]')) { var l = document.createElement('label'); l.innerHTML = 'URL Web App Apps Script<input name="gasurl" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(localStorage.getItem('ps_gas_url') || '') + '">'; f.insertBefore(l, f.firstChild); }
+    if (needUrl && !f.querySelector('[name=gasurl]')) { var l = document.createElement('label'); l.innerHTML = 'URL Web App Apps Script<input name="gasurl" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(PS_LS.get('ps_gas_url') || '') + '">'; f.insertBefore(l, f.firstChild); }
     PS.$('#loginOffline').textContent = navigator.onLine ? '' : 'Anda sedang offline. Login membutuhkan koneksi; data lapangan tersimpan tetap aman.';
-    if (!PS.hasGas() && (localStorage.getItem('ps_gas_url') || window.PS_GAS_URL) && navigator.onLine) PS.call('publicInfo').then(function (p) { ui.brand(p); }).catch(function () { });
+    if (!PS.hasGas() && (PS_LS.get('ps_gas_url') || window.PS_GAS_URL) && navigator.onLine) PS.call('publicInfo').then(function (p) { ui.brand(p); }).catch(function () { });
   };
   PS.$('.pw-eye').onclick = function () { var i = PS.$('#loginForm [name=password]'); i.type = i.type === 'password' ? 'text' : 'password'; };
   PS.$('#loginForm').onsubmit = function (e) {
     e.preventDefault(); var f = e.target, d = ui.read(f), btn = PS.$('#loginBtn'), msg = PS.$('#loginMsg'); msg.textContent = '';
-    if (d.gasurl !== undefined) { if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(d.gasurl)) { msg.textContent = 'URL Web App tidak valid'; return; } localStorage.setItem('ps_gas_url', d.gasurl); }
+    if (d.gasurl !== undefined) { if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(d.gasurl)) { msg.textContent = 'URL Web App tidak valid'; return; } PS_LS.set('ps_gas_url', d.gasurl); }
     ui.busy(btn, true, 'Masuk…');
     PS.call('login', { username: d.username, password: d.password, device: navigator.userAgent.slice(0, 120) }).then(function (r) {
       st.token = r.token; st.me = r.user;
-      (f.remember.checked ? localStorage : sessionStorage).setItem('ps_token', r.token);
+      if (f.remember.checked) { PS_LS.set('ps_token', r.token); PS.idb.set('token', r.token).catch(function () { }); } else PS_SS.set('ps_token', r.token);
       PS.idb.set('boot', r.boot).catch(function () { });
       f.password.value = ''; PS.applyBoot(r.boot); enter();
       if (r.user.mustChange) setTimeout(function () { PS.v.changePassword(true); }, 300);
@@ -1267,13 +1284,17 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
 
   /* ------------------------------ start ------------------------------ */
   PS.start = function () {
-    st.token = localStorage.getItem('ps_token') || sessionStorage.getItem('ps_token') || '';
+    st.token = PS_LS.get('ps_token') || PS_SS.get('ps_token') || '';
     var p = pub(); ui.brand(p); if (p.theme) PS.theme.apply();
+    PS.idb.get('logo').then(function (lg) { if (lg && !(st.boot && st.boot.settings && st.boot.settings.logo)) { p.logo = lg; ui.brand(p); } }).catch(function () { });
+    (st.token ? Promise.resolve(st.token) : PS.idb.get('token').catch(function () { return ''; })).then(function (tk) {
+    st.token = tk || '';
     if (!st.token) return ui.showLogin();
     PS.idb.get('boot').then(function (boot) {
       if (boot && boot.me) { PS.applyBoot(boot); enter(); if (st.online) PS.call('bootstrap', {}).then(function (b) { b.me = b.me || st.me; PS.applyBoot(b); PS.idb.set('boot', b).catch(function () { }); PS.rerender(); }).catch(function (e) { if (e.message !== 'OFFLINE') console.warn(e); }); }
       else PS.call('bootstrap', {}).then(function (b) { PS.applyBoot(b); PS.idb.set('boot', b).catch(function () { }); enter(); }).catch(function () { ui.showLogin(); });
     }).catch(function () { ui.showLogin(); });
+    });
   };
 })();
 </script>
@@ -1305,11 +1326,11 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
   M.create = function (el, opt) {
     opt = opt || {};
     var m = L.map(el, { preferCanvas: true, zoomControl: true, attributionControl: true, maxZoom: 22 });
-    var B = M.bases(), bk = localStorage.getItem('ps_base') || (B.custom ? 'custom' : 'osm'); if (!B[bk]) bk = 'osm';
+    var B = M.bases(), bk = PS_LS.get('ps_base') || (B.custom ? 'custom' : 'osm'); if (!B[bk]) bk = 'osm';
     var base = {}, w = { m: m, specs: [], over: {}, base: bk, legendExtra: [] };
     Object.keys(B).forEach(function (k) { var b = B[k]; base[b.l] = b.u ? L.tileLayer(b.u, { attribution: b.a, maxNativeZoom: b.mz, maxZoom: 22, crossOrigin: true }) : L.layerGroup(); });
     base[B[bk].l].addTo(m);
-    m.on('baselayerchange', function (e) { Object.keys(B).forEach(function (k) { if (B[k].l === e.name) { localStorage.setItem('ps_base', k); w.base = k; } }); });
+    m.on('baselayerchange', function (e) { Object.keys(B).forEach(function (k) { if (B[k].l === e.name) { PS_LS.set('ps_base', k); w.base = k; } }); });
     w.ctl = L.control.layers(base, {}, { collapsed: true }).addTo(m);
     L.control.scale({ metric: true, imperial: false }).addTo(m);
     // koordinat
@@ -1471,7 +1492,7 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
     var m = PS.ui.modal('Kustom Legenda Peta', '<p class="small muted">Ubah label, warna, bentuk, urutan, atau tambah item. Legenda dipakai pada peta & layout cetak.</p><div id="lgList"></div><button class="btn sm" id="lgAdd">＋ Tambah item</button>', { size: 'wide', buttons: [{ l: 'Reset otomatis', fn: function (m) { save(null, m); } }, { l: 'Batal', fn: function (m) { m.close(); } }, { l: 'Simpan', cls: 'primary', fn: function (m) { read(); save({ custom: true, items: items }, m); } }] });
     function draw() { m.body.querySelector('#lgList').innerHTML = items.map(function (i, k) { return '<div class="row" style="margin:4px 0" data-k="' + k + '"><input class="lgL grow" value="' + esc(i.l) + '"><input type="color" class="lgC" value="' + (/^#[0-9a-f]{6}$/i.test(i.c) ? i.c : '#888888') + '" style="width:52px"><select class="lgS" style="width:110px">' + ['dot', 'line', 'poly', 'tri'].map(function (s) { return '<option' + (s === i.shape ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select><button class="btn sm" data-up>▲</button><button class="btn sm danger" data-rm>✕</button></div>'; }).join(''); PS.$$('[data-rm]', m.body).forEach(function (b) { b.onclick = function () { read(); items.splice(Number(b.parentNode.getAttribute('data-k')), 1); draw(); }; }); PS.$$('[data-up]', m.body).forEach(function (b) { b.onclick = function () { read(); var k = Number(b.parentNode.getAttribute('data-k')); if (k > 0) { var t = items[k]; items[k] = items[k - 1]; items[k - 1] = t; } draw(); }; }); }
     function read() { PS.$$('#lgList > div', m.body).forEach(function (r, k) { items[k] = { l: r.querySelector('.lgL').value, c: r.querySelector('.lgC').value, shape: r.querySelector('.lgS').value }; }); }
-    function save(val, m) { st.boot.settings.legend = val; (PS.can('admin:w') ? PS.call('saveSettings', { legend: val ? JSON.stringify(val) : '' }) : Promise.resolve()).catch(PS.ui.err); try { localStorage.setItem('ps_legend', JSON.stringify(val)); } catch (e) { } m.close(); M.legendCtl(w); if (onDone) onDone(); PS.ui.toast(PS.can('admin:w') ? 'Legenda disimpan untuk organisasi' : 'Legenda diterapkan (sesi ini)'); }
+    function save(val, m) { st.boot.settings.legend = val; (PS.can('admin:w') ? PS.call('saveSettings', { legend: val ? JSON.stringify(val) : '' }) : Promise.resolve()).catch(PS.ui.err); try { PS_LS.set('ps_legend', JSON.stringify(val)); } catch (e) { } m.close(); M.legendCtl(w); if (onDone) onDone(); PS.ui.toast(PS.can('admin:w') ? 'Legenda disimpan untuk organisasi' : 'Legenda diterapkan (sesi ini)'); }
     m.body.querySelector('#lgAdd').onclick = function () { read(); items.push({ l: 'Item baru', c: '#888888', shape: 'dot' }); draw(); };
     draw();
   };
@@ -1954,8 +1975,8 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
     if (w) PS.$('#add', el).onclick = function () { edit({ status: 'Siap', owner: 'Sewa' }); };
     function edit(r) { ui.edit({ title: 'Peralatan', values: r, fields: [{ k: 'code', l: 'Kode', req: 1, ph: 'BASE-01' }, { k: 'type', l: 'Jenis', t: 'select', req: 1, opts: ['GNSS Base', 'GNSS Rover', 'Controller', 'Radio modem', 'Tripod', 'Tribrach', 'Pole rover', 'Baterai', 'Tablet', 'Laptop GIS', 'Lainnya'] }, { k: 'maker', l: 'Merek' }, { k: 'model', l: 'Model' }, { k: 'serial', l: 'Nomor seri' }, { k: 'owner', l: 'Kepemilikan', t: 'select', opts: ['Milik', 'Sewa', 'Vendor'] }, { k: 'status', l: 'Status', t: 'select', opts: ['Siap', 'Dipakai', 'Perbaikan', 'Rusak'] }, { k: 'calibration', l: 'Tgl kalibrasi/cek', t: 'date' }, { k: 'notes', l: 'Catatan', t: 'textarea', full: 1 }], onSave: function (d) { return PS.save('Devices', d); }, onDelete: r.id ? function () { return PS.del('Devices', r.id); } : null }); }
     var items = ['GNSS base dan rover berfungsi normal', 'Kalibrasi/cek pole height dan antena', 'Tripod, tribrach dan nivo diperiksa', 'Baterai dan charger tersedia', 'Firmware dan konfigurasi alat diperiksa', 'Controller berisi job dan desain titik', 'Sistem koordinat dan zona UTM dikonfirmasi', 'Base point/control point tersedia', 'Koneksi radio atau NTRIP diuji', 'Data desain blok tersedia secara offline', 'Pancang dan material mencukupi', 'APD dan perlengkapan keselamatan tersedia'];
-    var key = 'ps_ck_' + st.pid, saved = {}; try { saved = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { }
-    function draw() { var n = items.filter(function (_, i) { return saved[i]; }).length; PS.$('#ck', el).innerHTML = '<div class="card-h"><h3>Checklist mobilisasi alat</h3><span class="chip">' + n + '/' + items.length + ' selesai</span></div>' + ui.bar(n, items.length) + items.map(function (t, i) { return '<label class="chk" style="display:flex;gap:8px;margin:7px 0"><input type="checkbox" data-i="' + i + '"' + (saved[i] ? ' checked' : '') + '> ' + esc(t) + '</label>'; }).join('') + '<button class="btn sm" id="rst">Reset checklist</button>'; PS.$$('[data-i]', el).forEach(function (c) { c.onchange = function () { saved[c.getAttribute('data-i')] = c.checked; localStorage.setItem(key, JSON.stringify(saved)); draw(); }; }); PS.$('#rst', el).onclick = function () { saved = {}; localStorage.setItem(key, '{}'); draw(); }; }
+    var key = 'ps_ck_' + st.pid, saved = {}; try { saved = JSON.parse(PS_LS.get(key) || '{}'); } catch (e) { }
+    function draw() { var n = items.filter(function (_, i) { return saved[i]; }).length; PS.$('#ck', el).innerHTML = '<div class="card-h"><h3>Checklist mobilisasi alat</h3><span class="chip">' + n + '/' + items.length + ' selesai</span></div>' + ui.bar(n, items.length) + items.map(function (t, i) { return '<label class="chk" style="display:flex;gap:8px;margin:7px 0"><input type="checkbox" data-i="' + i + '"' + (saved[i] ? ' checked' : '') + '> ' + esc(t) + '</label>'; }).join('') + '<button class="btn sm" id="rst">Reset checklist</button>'; PS.$$('[data-i]', el).forEach(function (c) { c.onchange = function () { saved[c.getAttribute('data-i')] = c.checked; PS_LS.set(key, JSON.stringify(saved)); draw(); }; }); PS.$('#rst', el).onclick = function () { saved = {}; PS_LS.set(key, '{}'); draw(); }; }
     draw();
   } });
 
@@ -2095,7 +2116,7 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
       if (t === 'map') {
         var mc = PS.map.custom() || {};
         body.innerHTML = card('Peta dasar kustom (XYZ)', '<p class="small muted">Gunakan sumber ubin yang Anda miliki atau lisensikan: ortofoto drone sendiri (XYZ/TMS dari GeoServer, TileServer GL, QGIS "Generate XYZ tiles"), MapTiler/Mapbox dengan API key, dll. Format URL: <span class="mono">https://server/{z}/{x}/{y}.png</span></p><div id="mf">' + ui.form([{ k: 'name', l: 'Nama', def: mc.name || 'Ortofoto Estate' }, { k: 'url', l: 'URL template XYZ', full: 1, def: mc.url || '', ph: 'https://tiles.perusahaan.co.id/ortho/{z}/{x}/{y}.jpg' }, { k: 'attribution', l: 'Atribusi', def: mc.attribution || '', full: 1 }, { k: 'maxZoom', l: 'Zoom maksimum', t: 'number', def: mc.maxZoom || 20 }, { k: 'offline', l: 'Boleh di-cache untuk offline (saya memiliki hak atas ubin ini)', t: 'checkbox', def: !!mc.offline, full: 1 }], {}) + '</div>' + (w ? '<div class="row end"><button class="btn danger" id="mDel">Hapus</button><button class="btn primary" id="mSv">Simpan</button></div>' : '')) + card('Sumber publik bawaan', '<ul class="small"><li><b>OpenStreetMap</b> — gratis dengan atribusi (ODbL); tidak boleh diunduh massal/prefetch. Untuk pemakaian berat gunakan penyedia ubin komersial.</li><li><b>Esri World Imagery</b> — penggunaan komersial memerlukan akun/lisensi ArcGIS (ArcGIS Location Platform). Pastikan organisasi memiliki hak sebelum dipakai untuk produksi.</li><li><b>OpenTopoMap</b> — CC-BY-SA, kapasitas server terbatas; tidak untuk unduhan massal.</li></ul>');
-        if (w) { PS.$('#mSv', body).onclick = function () { var d = ui.read(PS.$('#mf', body)); if (d.url && !/^https:\/\/.+\{z\}.+\{x\}.+\{y\}/.test(d.url)) return ui.toast('URL harus https dan memuat {z} {x} {y}', 'warn'); PS.call('saveSettings', { mapCustom: d.url ? JSON.stringify(d) : '' }).then(function () { st.boot.settings.mapCustom = d.url ? d : ''; PS.saveBootCache(); localStorage.setItem('ps_base', d.url ? 'custom' : 'osm'); ui.toast('Peta dasar disimpan'); }).catch(ui.err); }; PS.$('#mDel', body).onclick = function () { PS.call('saveSettings', { mapCustom: '' }).then(function () { st.boot.settings.mapCustom = ''; localStorage.setItem('ps_base', 'osm'); PS.rerender(); }).catch(ui.err); }; }
+        if (w) { PS.$('#mSv', body).onclick = function () { var d = ui.read(PS.$('#mf', body)); if (d.url && !/^https:\/\/.+\{z\}.+\{x\}.+\{y\}/.test(d.url)) return ui.toast('URL harus https dan memuat {z} {x} {y}', 'warn'); PS.call('saveSettings', { mapCustom: d.url ? JSON.stringify(d) : '' }).then(function () { st.boot.settings.mapCustom = d.url ? d : ''; PS.saveBootCache(); PS_LS.set('ps_base', d.url ? 'custom' : 'osm'); ui.toast('Peta dasar disimpan'); }).catch(ui.err); }; PS.$('#mDel', body).onclick = function () { PS.call('saveSettings', { mapCustom: '' }).then(function () { st.boot.settings.mapCustom = ''; PS_LS.set('ps_base', 'osm'); PS.rerender(); }).catch(ui.err); }; }
         return;
       }
       if (t === 'brand') {
@@ -2266,7 +2287,7 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
     if (!('serial' in navigator)) return ui.toast('Web Serial tidak didukung browser ini (gunakan Chrome desktop/Android dengan USB OTG), atau input manual/impor', 'warn');
     if (live.port) { try { live.reader && live.reader.cancel(); live.port.close(); } catch (e) { } live.port = null; live.fix = null; ui.toast('Receiver diputus'); return; }
     navigator.serial.requestPort().then(function (port) {
-      return port.open({ baudRate: Number(localStorage.getItem('ps_baud') || 115200) }).then(function () {
+      return port.open({ baudRate: Number(PS_LS.get('ps_baud') || 115200) }).then(function () {
         live.port = port; ui.toast('Receiver terhubung — membaca NMEA');
         var dec = new TextDecoderStream(); port.readable.pipeTo(dec.writable).catch(function () { }); live.reader = dec.readable.getReader(); var buf = '', gst = null;
         (function loop() { live.reader.read().then(function (r) { if (r.done) return; buf += r.value; var lines = buf.split(/\r?\n/); buf = lines.pop(); lines.forEach(function (l) { var x = PSGeo.parseNMEA(l); if (/GST/.test(l)) { var f = l.split('*')[0].split(','); gst = { hAcc: Math.hypot(Number(f[6]), Number(f[7])), vAcc: Number(f[8]) }; } if (x.epochs.length) { var ep = x.epochs[0]; if (gst) { ep.hAcc = PSGeo.round4(gst.hAcc); ep.vAcc = gst.vAcc; } ep.t = Date.now(); live.fix = ep; if (onFix) onFix(ep); } }); loop(); }).catch(function () { live.port = null; }); })();
@@ -2280,11 +2301,11 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
     ui.tabs(PS.$('#ft', el), [['stake', '📍 Stake-out'], ['queue', '📤 Antrean (' + PS.sync.pending.length + ')']], tab, function (t, body) {
       if (t === 'queue') return queue(body);
       if (!ds.length) { body.innerHTML = card('Stake-out', ui.empty('📐', 'Belum ada desain yang disetujui. Pemancangan hanya boleh pada desain berstatus APPROVED.')); return; }
-      var did = prm.did && ds.some(function (d) { return d.id === prm.did; }) ? prm.did : (localStorage.getItem('ps_did') && ds.some(function (d) { return d.id === localStorage.getItem('ps_did'); }) ? localStorage.getItem('ps_did') : ds[0].id);
+      var did = prm.did && ds.some(function (d) { return d.id === prm.did; }) ? prm.did : (PS_LS.get('ps_did') && ds.some(function (d) { return d.id === PS_LS.get('ps_did'); }) ? PS_LS.get('ps_did') : ds[0].id);
       var d = PS.byId('Designs', did), z = M.zone();
       body.innerHTML = '<div class="card"><div class="row sb"><select id="dsel" style="width:auto">' + ds.map(function (x) { return '<option value="' + x.id + '"' + (x.id === did ? ' selected' : '') + '>' + esc(PS.blockLabel(x.blockId)) + ' · v' + x.version + ' (' + PS.fmtN(x.count) + ')</option>'; }).join('') + '</select><div class="row"><button class="btn sm" id="off">⬇ Siapkan offline</button><button class="btn sm" id="ser">🔌 Receiver NMEA</button><button class="btn sm" id="gps">📡 GPS HP</button></div></div><div id="liveBox" class="small muted" style="margin-top:6px"></div></div>' +
         '<div class="grid g-side"><div><div class="card navbox" id="nav"><div class="skel"></div></div><div class="card" id="prog"></div></div><div class="card"><div id="fm" class="map tall"></div></div></div>';
-      PS.$('#dsel', body).onchange = function (e) { localStorage.setItem('ps_did', e.target.value); PS.go('field', { did: e.target.value }, { replace: true }); };
+      PS.$('#dsel', body).onchange = function (e) { PS_LS.set('ps_did', e.target.value); PS.go('field', { did: e.target.value }, { replace: true }); };
       var mp = M.create(PS.$('#fm', body)), target = null, myPos = null, heading = null, layer = null, items = [], cur = {}, rid = PS.renderId;
       Promise.all([PS.loadPoints(did), PS.loadObs(p.id).catch(function () { return []; })]).then(function (r) {
         if (!PS.alive(rid)) return;
@@ -2321,13 +2342,13 @@ var PS = window.PS = { VERSION: '1.0.0', BUILD: '2026-11-18', st: { token: '', m
           return { planned: planned, neighbors: V._nb.nb, actual: actual, boundary: PSGeo.geomToUtmPolys(blk.geom, z.zone, z.south), exclusions: exclusionsLocal(p, z), tol: p.tol, dupIndex: function (x, y, r) { return idx.near(x, y, r).map(function (i) { return list[i]; }); } };
         }
         function record(pp) {
-          var f = live.fix && Date.now() - live.fix.t < 5000 ? live.fix : null, uu = f ? PSGeo.toUTM(f.lat, f.lon, z.zone, z.south) : null, last = {}; try { last = JSON.parse(localStorage.getItem('ps_lastobs') || '{}'); } catch (e) { }
+          var f = live.fix && Date.now() - live.fix.t < 5000 ? live.fix : null, uu = f ? PSGeo.toUTM(f.lat, f.lon, z.zone, z.south) : null, last = {}; try { last = JSON.parse(PS_LS.get('ps_lastobs') || '{}'); } catch (e) { }
           var photo = '';
           var m = ui.edit({ title: 'Catat pancang ' + pp.code, wide: 1, noRerender: 1, values: { e: uu ? uu.e.toFixed(4) : '', n: uu ? uu.n.toFixed(4) : '', z: f ? f.z : '', fix: f ? f.fix : 'FIXED', hAcc: f ? f.hAcc : '', vAcc: f ? f.vAcc : '', sats: f ? f.sats : '', pdop: f ? f.hdop : '', antH: last.antH || '', antMethod: last.antMethod || 'Vertikal ke dasar mount', corr: last.corr || p.correction || 'RADIO', device: last.device || '', observedAt: new Date().toISOString().slice(0, 19) },
             fields: [{ t: 'html', full: 1, html: '<div class="small muted">Rencana: E ' + pp.e.toFixed(3) + ' · N ' + pp.n.toFixed(3) + (f ? ' · <b class="flag-ok">terisi dari receiver</b>' : ' · isi dari layar controller RTK') + '</div>' }, { k: 'e', l: 'Easting aktual', t: 'number', req: 1, step: 'any' }, { k: 'n', l: 'Northing aktual', t: 'number', req: 1, step: 'any' }, { k: 'z', l: 'Elevasi', t: 'number' }, { k: 'fix', l: 'Status solusi', t: 'select', req: 1, empty: false, opts: ['FIXED', 'FLOAT', 'DGPS', 'SINGLE'] }, { k: 'hAcc', l: 'Presisi σH (m)', t: 'number', req: 1 }, { k: 'vAcc', l: 'Presisi σV (m)', t: 'number' }, { k: 'sats', l: 'Jumlah satelit', t: 'number', req: 1 }, { k: 'pdop', l: 'PDOP', t: 'number', req: 1 }, { k: 'antH', l: 'Tinggi antena (m)', t: 'number', req: 1 }, { k: 'antMethod', l: 'Metode tinggi antena', t: 'select', opts: ['Vertikal ke dasar mount', 'Slant (miring)', 'Phase center', 'Pole tetap'] }, { k: 'corr', l: 'Sumber koreksi', t: 'select', opts: ['RADIO', 'NTRIP', 'CORS', 'PPK'] }, { k: 'device', l: 'Receiver (kode/serial)', t: 'select', req: 1, opts: PS.T('Devices').filter(function (x) { return /Rover/i.test(x.type); }).map(function (x) { return [x.code, x.code + ' ' + (x.serial || '')]; }).concat([['MANUAL', 'Lainnya/manual']]) }, { k: 'observedAt', l: 'Waktu observasi', t: 'datetime-local', req: 1 }, { k: 'notes', l: 'Catatan lapangan', t: 'textarea', full: 1 }, { t: 'html', full: 1, html: '<div class="row"><button type="button" class="btn" id="ph">📷 Foto pancang</button><img id="phI" class="photo-thumb zoomable" hidden><span id="qcp" class="small"></span></div>' }],
             onSave: function (dd) {
               var obs = { designId: did, pointCode: pp.code, kind: 'STAKE', e: dd.e, n: dd.n, z: dd.z, fix: dd.fix, hAcc: dd.hAcc, vAcc: dd.vAcc, sats: dd.sats, pdop: dd.pdop, antH: dd.antH, antMethod: dd.antMethod, corr: dd.corr, device: dd.device, operator: st.me.username, observedAt: new Date(dd.observedAt).toISOString(), notes: dd.notes, photoId: '' };
-              localStorage.setItem('ps_lastobs', JSON.stringify({ antH: dd.antH, antMethod: dd.antMethod, corr: dd.corr, device: dd.device }));
+              PS_LS.set('ps_lastobs', JSON.stringify({ antH: dd.antH, antMethod: dd.antMethod, corr: dd.corr, device: dd.device }));
               var q = PSGeo.qcEvaluate(obs, ctxLocal());
               var chain = photo ? PS.sync.add('blob', { dataUrl: photo, name: pp.code + '.jpg', projectId: p.id, type: 'photo', refType: 'obs', refId: pp.code }, 'PH-' + PS.uuid()).then(function (it) { obs.photoId = it.syncId; PS.idb.set('ph_' + it.syncId, photo).catch(function () { }); }) : Promise.resolve();
               return chain.then(function () { return PS.sync.add('obs', obs); }).then(function () { ui.toast(pp.code + ': ' + (PS.STATUS[q.status] || {}).l + ' (dH ' + PS.fmtN(q.dH * 100, 1) + ' cm) — ' + (st.online ? 'mengirim…' : 'tersimpan offline'), q.status === 'QC_PASSED' ? 'ok' : 'warn'); build(); nextTarget(true); });
